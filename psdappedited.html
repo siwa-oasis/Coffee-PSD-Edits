@@ -1,3 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coffee particle size analysis</title>
+
+<!-- Original app by Prof Steven Abbott, stevenabbott.co.uk (CC BY).
+     Stripped of site navigation, fonts, analytics and footer for local work. -->
+
 <style>
   :root {
     --page: #eceeed;
@@ -99,6 +109,17 @@
     min-height: 320px;
   }
   #psd-viewer.is-drop { box-shadow: inset 0 0 0 2px #7fc6de; }
+  #psd-viewer.is-zoomed { overflow: auto; justify-content: flex-start; align-items: flex-start; }
+  #psd-viewer-frame { flex: none; }
+  #psd-viewer-frame.is-magnified #psd-image-canvas { image-rendering: pixelated; }
+  #psd-overlay-canvas { touch-action: none; }
+  .psd-viewtools {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 2px 10px; font-size: 13px;
+  }
+  .psd-viewtools input[type=range] { width: 160px; margin: 0; }
+  .psd-viewtools output { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .psd-viewtools .psd-hint { margin: 0; }
   #psd-viewer-frame { position: relative; width: 100%; display: none; }
   .has-image #psd-viewer-frame { display: block; }
   #psd-image-canvas, #psd-overlay-canvas {
@@ -191,9 +212,76 @@
     table.psd-stats { min-width: 0; width: 100%; }
     .psd-stats th, .psd-stats td { padding: 6px 8px; }
   }
+
+  /* ---------- Standalone patches ----------
+     The original page inherited styles.v2.min.css from the site, which gave
+     table headers a dark background. On its own, the rule above paints header
+     text near-white on a near-white table. These three rules restore legibility
+     and add padding to the guide, which used to sit inside the site wrapper. */
+  .psd-stats thead th { color: var(--ink); background: #dfe4e5; }
+  .psd-stats .psd-d50, .psd-pool-table .psd-running { color: #fff; }
+  .psd-guide { padding: 24px; max-width: 82ch; }
+
+  /* ---------- Ruler calibration ---------- */
+  #cal-summary.is-cal-ok   { color: #1f6f4f; }
+  #cal-summary.is-cal-warn { color: #9a5a0f; }
+
+  .cal-modal {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(18, 24, 28, 0.62);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 24px 16px; overflow-y: auto;
+  }
+  .cal-modal[hidden] { display: none; }
+  .cal-panel {
+    background: var(--surface); border-radius: 6px; padding: 16px 18px 18px;
+    width: min(960px, 100%); box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  }
+  .cal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+  .cal-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .cal-stage {
+    margin-top: 10px; background: var(--stage); border-radius: 4px; padding: 10px;
+    display: flex; justify-content: center;
+  }
+  #cal-canvas { display: block; cursor: crosshair; touch-action: none; }
+  .cal-controls {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 12px;
+    font-size: 13.5px;
+  }
+  .cal-controls label { display: inline-flex; align-items: center; gap: 6px; }
+  .cal-controls input[type=number] { width: 84px; }
+  .cal-controls select {
+    font: inherit; padding: 5px 8px; border: 1px solid var(--rule);
+    border-radius: 4px; background: #fff; color: var(--ink);
+  }
+  .cal-profile {
+    display: block; width: 100%; height: 76px; margin-top: 12px;
+    background: #fff; border: 1px solid var(--rule); border-radius: 4px;
+  }
+  .cal-readout {
+    margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--rule);
+    background: #fff; font-size: 13px; white-space: pre-line;
+    font-variant-numeric: tabular-nums; line-height: 1.5;
+  }
+  .cal-readout { min-height: 5.6em; }
+  .cal-readout.is-good { border-left-color: #1f6f4f; }
+  .cal-readout.is-warn { border-left-color: #9a5a0f; }
+  .cal-readout.is-bad  { border-left-color: #a33b2b; color: var(--muted); }
+  .cal-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .cal-controls .cal-check { gap: 7px; }
+  .cal-spacer { flex: 1 1 auto; }
+  .cal-key { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .cal-dot {
+    display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+    border: 1px solid rgba(0,0,0,.25); vertical-align: middle;
+  }
+  .cal-dot.is-ok  { background: #40ffa0; }
+  .cal-dot.is-mid { background: #ffc440; }
+  .cal-dot.is-bad { background: #ff6060; }
 </style>
 </head>
 <body>
+
 <div id="psd-app">
   <header class="psd-header">
     <h1>Coffee particle size analysis</h1>
@@ -209,9 +297,13 @@
       </div>
       <div class="psd-field psd-row">
         <label for="psd-width-mm">Width (mm)</label>
-        <input id="psd-width-mm" type="number" min="10" max="40" step="0.1" value="25">
+        <input id="psd-width-mm" type="number" min="1" max="200" step="0.01" value="25">
       </div>
       <p id="psd-scale-info" class="psd-hint">Real width of full image => correct µm scale.</p>
+      <div class="psd-field">
+        <button id="cal-open" class="psd-button" type="button" disabled>Calibrate from ruler…</button>
+      </div>
+      <p id="cal-summary" class="psd-hint"></p>
     </fieldset>
 
     <fieldset>
@@ -235,13 +327,24 @@
       <legend>Region of interest</legend>
       <div class="psd-field">
         <div class="psd-row"><label for="psd-ell-a">Ellipse width, a</label><output id="psd-ell-a-val" for="psd-ell-a">100 %</output></div>
-        <input id="psd-ell-a" type="range" min="75" max="150" step="1" value="100">
+        <input id="psd-ell-a" type="range" min="5" max="150" step="1" value="100">
       </div>
       <div class="psd-field">
         <div class="psd-row"><label for="psd-ell-b">Ellipse height, b</label><output id="psd-ell-b-val" for="psd-ell-b">100 %</output></div>
-        <input id="psd-ell-b" type="range" min="75" max="150" step="1" value="100">
+        <input id="psd-ell-b" type="range" min="5" max="150" step="1" value="100">
       </div>
-      <p class="psd-hint">Exclude particles in low contrast corners.</p>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-ell-cx">Centre across</label><output id="psd-ell-cx-val" for="psd-ell-cx">50.0 %</output></div>
+        <input id="psd-ell-cx" type="range" min="0" max="100" step="0.5" value="50">
+      </div>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-ell-cy">Centre down</label><output id="psd-ell-cy-val" for="psd-ell-cy">50.0 %</output></div>
+        <input id="psd-ell-cy" type="range" min="0" max="100" step="0.5" value="50">
+      </div>
+      <div class="psd-field">
+        <button id="psd-roi-reset" class="psd-button psd-button-small" type="button">Centre and reset</button>
+      </div>
+      <p class="psd-hint">Exclude low contrast corners, or move the ellipse off a ruler or slide edge. Drag inside the ellipse on the image to move it, shift-drag to resize. It is kept inside the image, so at sizes above 100% it stays centred.</p>
     </fieldset>
 
     <fieldset>
@@ -263,6 +366,7 @@
         <div class="psd-row"><label for="psd-dmin">D-Min</label><output id="psd-dmin-val" for="psd-dmin">50 µm</output></div>
         <input id="psd-dmin" type="range" min="0" max="100" step="1" value="50">
       </div>
+      <p id="psd-dmin-hint" class="psd-hint"></p>
       <div class="psd-field">
         <div class="psd-row"><label for="psd-dmax">D-Max</label><output id="psd-dmax-val" for="psd-dmax">1200 µm</output></div>
         <input id="psd-dmax" type="range" min="1000" max="2000" step="10" value="1200">
@@ -275,8 +379,8 @@
         <div class="psd-row"><label for="psd-bins">Number of bins</label><output id="psd-bins-val" for="psd-bins">15</output></div>
         <input id="psd-bins" type="range" min="10" max="20" step="1" value="15">
       </div>
-       <label class="psd-check"><input title="Show KDE (smooth) plot" id="psd-kde" type="checkbox"><span>KDE Plot</span></label>
-     <label class="psd-check"><input title="Log₁₀ plot (10–2000 µm)" id="psd-log" type="checkbox"><span>Log₁₀ plot</span></label>
+      <label class="psd-check"><input title="Show KDE (smooth) plot" id="psd-kde" type="checkbox"><span>KDE Plot</span></label>
+      <label class="psd-check"><input title="Log₁₀ plot (10–2000 µm)" id="psd-log" type="checkbox"><span>Log₁₀ plot</span></label>
       <label class="psd-check"><input title="Frequency plot rather than Probability Density" id="psd-frequency" type="checkbox"><span>Frequency plot</span></label>
       <div class="psd-series" role="group" aria-label="Series shown">
         <label class="psd-check"><input title="Show Number plot" id="psd-series-number" type="checkbox" checked><span>N</span></label>
@@ -293,6 +397,13 @@
   </aside>
 
   <main class="psd-main">
+    <div class="psd-viewtools">
+      <label for="psd-zoom">Zoom</label>
+      <input id="psd-zoom" type="range" min="100" max="400" step="10" value="100">
+      <output id="psd-zoom-val" for="psd-zoom">100 %</output>
+      <button id="psd-zoom-reset" class="psd-button psd-button-small" type="button">Fit</button>
+      <span class="psd-hint">Scroll the stage to pan. Drag inside the ellipse to move it, shift-drag to resize.</span>
+    </div>
     <div id="psd-viewer">
       <div class="psd-empty">
         <p>Open an image, or drop one here.</p>
@@ -366,22 +477,1358 @@
             <tbody id="psd-pool-body"></tbody>
           </table>
         </div>
-       </section>
+      </section>
     </section>
- </main>
- </div>
- <p></p>
+  </main>
+</div>
+
+<section class="psd-guide">
 <h3>PSD Guide</h3>
 <p>You have an image of coffee particles taken via a microscope with a fixed field of view (so that all images are easily co-analysed). You've measured the width of that field, in mm, and you enter that near the top to provide an absolute scale. There is a trade-off of narrow width and high resolution but fewer particles, and wide width, lower resolution but more particles.</p>
 <p>You select the image and check that it looks OK. If not, choose another.</p>
+<p>The ellipse can also be moved off centre, which is how you keep a ruler, a slide edge or any other non-particle object out of the analysis without cropping the image first. Drag inside the ellipse on the image to move it, shift-drag to resize, or use the Centre across and Centre down sliders for fine control. Zoom the stage to place it precisely.</p>
 <p>Many microscopes have a brightness fade-off towards the corners. This makes it impossible to balance the "threshold" of the core image with these outer portions. Using the two <b>Ellipses</b>, you can choose what to include or exclude from the analysis. If your image is uniform, set them both to 150%, so there's no exclusion.</p>
 <p>Select <b>Threshold</b> then slide the threshold slider to get a good division between particles and background. Chaff particles can often be excluded by having a lower value of the threshold.</p>
 <p>It's impossible to distinguish between particles that are just touching and those that are an agglomerate, but you can use the <b>Separate touching</b> option to make a judgement call, using the <b>Neck</b> ratio to refine your choice.</p>
-<p>Sometimes you want to exclude very small and very large particles from the analysis. Do this via <b>D-Min & D-Max</b></p>
+<p>Sometimes you want to exclude very small and very large particles from the analysis. Do this via <b>D-Min &amp; D-Max</b></p>
 <p>For plotting you have a variety of choices. <b>Number of bins</b> is a compromise between a small value, with plenty of entries in each size "bin", but low visual resolution and a high value which gives a smoother distribution, but with fewer particles in each bin. When you have combined datasets (see below) you can go to more bins. This does not affect the calculated values. Then you can choose between <b>Log</b> or <b>Frequency</b> (as an alternative to the more usual "Probability Density)" plots and choose which of <b>Number, Area or Volume</b> distributions you want to see</p>
 <p>The <b>KDE</b> option produces a Kernel Density Estimation plot of the histogram. It is a smart smoothing of the histogram to give a more conventional curve. KDEs are a trade-off between over- and under- smoothing. The app uses a Tuned Silverman/Scott "bandwidth" parameter, calculated from the histogram statistics.</p>
 <p>Once you are happy with the analysis, click the <b>Export CSV</b> to have a record of all relevant values.</p>
 <h3>Combining data</h3>
 <p>A PSD needs many particles to be accurate, but each image has a limited number. So if you have a few different images from a wider area, you can, first, <b>Clear Cumulative</b> if you have a previous multi-image analysis, then for each new image, suitably thresholded, click <b>Add to Cumulative</b> to add the raw data to the collection. When you have enough image data, click <b>Show Cumulative</b> to see the PSD values based on this larger set. When you <b>Export CSV</b> you get the analysis of the full dataset, plus the summaries of the individual sets. If you are interested in, say, Volume D50 (the most used parameter) you can see how it varies for the individual images and how it gradually evolves to the final value. If there are large differences between samples, you may want to revise your technique. If the values are similar then you don't need to take so many images. And if you added one rogue image, you can delete it from the collection and get a revised analysis.</p>
+</section>
 
-<script src="apps/js/psd.v2.js"></script>
+<div id="cal-modal" class="cal-modal" hidden>
+  <div class="cal-panel" role="dialog" aria-modal="true" aria-labelledby="cal-title">
+    <div class="cal-head">
+      <h2 id="cal-title">Calibrate scale from ruler</h2>
+      <button id="cal-close" class="psd-button psd-button-small" type="button">Close</button>
+    </div>
+    <p id="cal-instruction" class="psd-hint">Drag a line along the ruler, crossing as many marks as possible. Drag either yellow end dot to reshape it, drag a mark to move it, double-click the line to add one, two-finger click a mark to remove it.</p>
+
+    <div class="cal-stage">
+      <canvas id="cal-canvas"></canvas>
+    </div>
+
+    <div class="cal-controls">
+      <label for="cal-mode">Mode
+        <select id="cal-mode">
+          <option value="auto">Detect marks automatically</option>
+          <option value="manual">Two points, known distance</option>
+        </select>
+      </label>
+      <label id="cal-spacing-row" for="cal-spacing">Mark spacing (mm)
+        <input id="cal-spacing" type="number" min="0.05" max="100" step="0.05" value="1">
+      </label>
+      <label id="cal-known-row" for="cal-known" hidden>Distance (mm)
+        <input id="cal-known" type="number" min="0.1" max="500" step="0.1" value="10">
+      </label>
+      <label for="cal-band">Band (px)
+        <input id="cal-band" type="number" min="0" max="40" step="1" value="4">
+      </label>
+      <label id="cal-snap-row" for="cal-snap" class="cal-check">
+        <input id="cal-snap" type="checkbox" checked> Snap dragged marks to edges
+      </label>
+      <span class="cal-spacer"></span>
+      <button id="cal-redetect" class="psd-button psd-button-small" type="button">Detect again</button>
+      <button id="cal-redraw" class="psd-button psd-button-small" type="button">Redraw line</button>
+    </div>
+
+    <p class="psd-hint cal-key">
+      Mark colour shows how far each one sits from the fitted series:
+      <span class="cal-dot is-ok"></span> on the series,
+      <span class="cal-dot is-mid"></span> drifting,
+      <span class="cal-dot is-bad"></span> distorting the fit.
+      Hover a mark for its number, slot and residual. The yellow end dots are the line, not marks.
+    </p>
+
+    <canvas id="cal-profile" class="cal-profile" role="img" aria-label="Intensity profile along the drawn line"></canvas>
+    <p id="cal-readout" class="cal-readout">Drag a line across the ruler marks.</p>
+
+    <div class="cal-actions">
+      <button id="cal-apply" class="psd-button psd-button-primary" type="button" disabled>Apply to Width (mm)</button>
+      <button id="cal-cancel" class="psd-button" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- All the logic lives here. Save psd.v2.js next to this file. -->
+<script src="psd.v2.js"></script>
+<!-- Ruler calibration. Inlined, and must come after psd.v2.js. -->
+<script>
+/*
+ * calibrate.js — ruler-based scale calibration for the coffee PSD app.
+ *
+ * Loads AFTER psd.v2.js and does not modify it. The only coupling is that this
+ * module writes a value into #psd-width-mm and dispatches a 'change' event,
+ * which is what the host app already listens for.
+ *
+ * Method
+ *   1. The user drags a line along the ruler, crossing the millimetre marks.
+ *   2. An intensity profile is sampled along that line, averaged over a short
+ *      perpendicular band. Because the marks run perpendicular to the drawn
+ *      line, averaging across the band integrates along each mark and
+ *      reinforces it while suppressing uncorrelated noise.
+ *   3. The profile is detrended with a moving average to remove the brightness
+ *      gradient typical of microscope optics.
+ *   4. The mark period is estimated by autocorrelation, taking the FIRST strong
+ *      local maximum rather than the global one, so that harmonics at 2x and 3x
+ *      the true period are not mistaken for the fundamental.
+ *   5. Marks are located as local extrema with sub-pixel parabolic refinement.
+ *      Both polarities are tried and the better fit wins.
+ *   6. Each mark is assigned an integer index, then position is regressed
+ *      against index by least squares. The slope is pixels per mark interval.
+ *   7. Field width (mm) = image width (px) / (pixels per mm).
+ *
+ * Marks are editable. Detection is a starting point, not a verdict: marks can
+ * be dragged along the line, added, or removed, and the fit updates on each
+ * edit. Every mark is coloured by its residual, so the ones distorting the fit
+ * are visible without reading any numbers.
+ */
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  var MIN_MARKS = 4;              // fewer than this is a guess, not a regression
+  var MAX_RESID_FRACTION = 0.18;  // RMS residual as a fraction of the period
+  var MARK_HIT_PX = 9;            // screen-space grab radius for a mark
+  var LINE_HIT_PX = 16;           // screen-space "on the line" radius
+  var ADD_HIT_PX = 44;            // generous radius when adding a mark
+  var END_HIT_PX = 12;            // screen-space grab radius for an endpoint
+  var PIN_PERP_PX = 40;           // how far off the line a mark may sit and still count
+  var SNAP_RADIUS_PX = 3;         // image-space snap search, each side
+
+  var C = {
+    img: null, W: 0, H: 0, gray: null, fileName: '',
+    scale: 1,
+    p0: null, p1: null,           // line endpoints, image coordinates
+    marks: [],                    // positions along the line, px from p0
+    residuals: [],                // parallel to marks, px
+    profile: null,                // raw sampled profile
+    sig: null,                    // detrended, polarity-corrected signal (for snapping)
+    period: null,                 // autocorrelation estimate, px
+    polarity: -1,
+    edited: false,
+    fit: null, pxPerMm: null, warn: null, error: null, detail: '',
+    dupes: {},                    // mark index -> true when it shares a slot
+    pts: [],                      // every mark, held in IMAGE coordinates, so that
+                                  // reshaping the line never moves or loses one
+    vetoes: [],                   // deleted marks, also in image coordinates
+    covered: [],                  // line segments the detector has already inspected
+    baseline: null,               // mark set frozen at the start of a line drag
+    ptRef: [],                    // parallel to marks: the stored point behind each
+    drag: null,                   // {type:'line'|'end'|'mark', ...}
+    hover: -1, hoverEnd: -1
+  };
+
+  // ===================================================================
+  // Image capture (independent of whatever the main app is displaying)
+  // ===================================================================
+
+  function loadFromFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      var W = img.naturalWidth, H = img.naturalHeight;
+      var off = document.createElement('canvas');
+      off.width = W; off.height = H;
+      var ctx = off.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      var d = ctx.getImageData(0, 0, W, H).data;
+      var gray = new Float32Array(W * H);
+      for (var i = 0, j = 0; i < W * H; i++, j += 4) {
+        gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000;
+      }
+      C.img = img; C.W = W; C.H = H; C.gray = gray; C.fileName = file.name;
+      resetLine();
+      $('cal-open').disabled = false;
+      setSummary('Image loaded. Calibrate from the ruler, or set the width by hand.');
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); };
+    img.src = url;
+  }
+
+  function resetLine() {
+    C.p0 = null; C.p1 = null;
+    C.marks = []; C.residuals = [];
+    C.profile = null; C.sig = null; C.period = null;
+    C.edited = false; C.fit = null; C.pxPerMm = null; C.dupes = {};
+    C.warn = null; C.error = null; C.detail = ''; C.hover = -1; C.hoverEnd = -1; C.drag = null;
+    C.pts = []; C.vetoes = []; C.covered = []; C.ptRef = []; C.baseline = null;
+  }
+
+  function setSummary(text, cls) {
+    var el = $('cal-summary');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'psd-hint' + (cls ? ' ' + cls : '');
+  }
+
+  // ===================================================================
+  // Geometry helpers
+  // ===================================================================
+
+  function lineLength() {
+    return C.p0 && C.p1 ? Math.hypot(C.p1.x - C.p0.x, C.p1.y - C.p0.y) : 0;
+  }
+
+  function unitAlong() {
+    var L = lineLength() || 1;
+    return { x: (C.p1.x - C.p0.x) / L, y: (C.p1.y - C.p0.y) / L };
+  }
+
+  /** Point at distance t along the line from p0. */
+  function pointAt(t) {
+    var u = unitAlong();
+    return { x: C.p0.x + u.x * t, y: C.p0.y + u.y * t };
+  }
+
+  /** Scalar projection of an image-space point onto the line, clamped to it. */
+  function projectOnto(pt) {
+    var u = unitAlong();
+    return clamp((pt.x - C.p0.x) * u.x + (pt.y - C.p0.y) * u.y, 0, lineLength());
+  }
+
+  /** Unclamped projection of an image point: distance along, and offset from. */
+  function projectRaw(pt) {
+    var u = unitAlong();
+    var t = (pt.x - C.p0.x) * u.x + (pt.y - C.p0.y) * u.y;
+    return { t: t, perp: Math.hypot(pt.x - (C.p0.x + u.x * t), pt.y - (C.p0.y + u.y * t)) };
+  }
+
+  /** Perpendicular distance from an image-space point to the line segment. */
+  function distanceToLine(pt) {
+    var q = pointAt(projectOnto(pt));
+    return Math.hypot(pt.x - q.x, pt.y - q.y);
+  }
+
+  // ===================================================================
+  // Profile sampling
+  // ===================================================================
+
+  function bilinear(x, y) {
+    if (x < 0 || y < 0 || x > C.W - 1 || y > C.H - 1) return null;
+    var x0 = Math.floor(x), y0 = Math.floor(y);
+    var x1 = Math.min(x0 + 1, C.W - 1), y1 = Math.min(y0 + 1, C.H - 1);
+    var fx = x - x0, fy = y - y0, g = C.gray;
+    var a = g[y0 * C.W + x0], b = g[y0 * C.W + x1];
+    var c = g[y1 * C.W + x0], d = g[y1 * C.W + x1];
+    return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+  }
+
+  function sampleProfile(band) {
+    var L = lineLength();
+    var n = Math.max(2, Math.round(L));
+    var u = unitAlong();
+    var px = -u.y, py = u.x;
+    var prof = new Float64Array(n);
+    for (var i = 0; i < n; i++) {
+      var sum = 0, cnt = 0;
+      for (var b = -band; b <= band; b++) {
+        var v = bilinear(C.p0.x + u.x * i + px * b, C.p0.y + u.y * i + py * b);
+        if (v !== null) { sum += v; cnt++; }
+      }
+      prof[i] = cnt ? sum / cnt : 0;
+    }
+    return prof;
+  }
+
+  function movingAverage(x, win) {
+    var n = x.length, half = Math.max(1, win >> 1);
+    var pre = new Float64Array(n + 1), out = new Float64Array(n);
+    for (var i = 0; i < n; i++) pre[i + 1] = pre[i] + x[i];
+    for (var k = 0; k < n; k++) {
+      var a = Math.max(0, k - half), b = Math.min(n, k + half + 1);
+      out[k] = (pre[b] - pre[a]) / (b - a);
+    }
+    return out;
+  }
+
+  function detrend(x, win) {
+    var m = movingAverage(x, win), out = new Float64Array(x.length);
+    for (var i = 0; i < x.length; i++) out[i] = x[i] - m[i];
+    return out;
+  }
+
+  // ===================================================================
+  // Period estimation
+  // ===================================================================
+
+  function estimatePeriod(x) {
+    var n = x.length;
+    var maxLag = Math.floor(n / 3), minLag = 3;
+    if (maxLag <= minLag + 2) return null;
+
+    var v0 = 0;
+    for (var i = 0; i < n; i++) v0 += x[i] * x[i];
+    if (v0 <= 1e-9) return null;
+
+    var acf = new Float64Array(maxLag + 2);
+    for (var lag = 0; lag <= maxLag + 1; lag++) {
+      var s = 0, m = 0;
+      for (var k = 0; k + lag < n; k++) { s += x[k] * x[k + lag]; m++; }
+      acf[lag] = m ? (s / m) / (v0 / n) : 0;
+    }
+
+    var start = minLag;
+    while (start <= maxLag && acf[start] > 0) start++;
+    start = Math.max(start, minLag);
+
+    var peaks = [];
+    for (var j = start + 1; j < maxLag; j++) {
+      if (acf[j] > acf[j - 1] && acf[j] >= acf[j + 1]) peaks.push(j);
+    }
+    if (!peaks.length) return null;
+
+    var strongest = 0;
+    for (var q = 0; q < peaks.length; q++) strongest = Math.max(strongest, acf[peaks[q]]);
+    if (strongest <= 0.05) return null;
+
+    var lag0 = peaks[0];
+    for (var r = 0; r < peaks.length; r++) {
+      if (acf[peaks[r]] >= 0.6 * strongest) { lag0 = peaks[r]; break; }
+    }
+
+    var ym1 = acf[lag0 - 1], y0 = acf[lag0], y1 = acf[lag0 + 1];
+    var den = ym1 - 2 * y0 + y1;
+    var shift = den !== 0 ? 0.5 * (ym1 - y1) / den : 0;
+    if (!isFinite(shift) || Math.abs(shift) > 1) shift = 0;
+    return { period: lag0 + shift, strength: y0 };
+  }
+
+  // ===================================================================
+  // Mark location, snapping, regression
+  // ===================================================================
+
+  function refineAt(sig, i) {
+    if (i <= 0 || i >= sig.length - 1) return i;
+    var den = sig[i - 1] - 2 * sig[i] + sig[i + 1];
+    var shift = den !== 0 ? 0.5 * (sig[i - 1] - sig[i + 1]) / den : 0;
+    if (!isFinite(shift) || Math.abs(shift) > 1) shift = 0;
+    return i + shift;
+  }
+
+  function findMarks(sig, minSep) {
+    var cands = [];
+    for (var i = 1; i < sig.length - 1; i++) {
+      if (sig[i] > sig[i - 1] && sig[i] >= sig[i + 1]) {
+        cands.push({ pos: refineAt(sig, i), val: sig[i] });
+      }
+    }
+    cands.sort(function (a, b) { return b.val - a.val; });
+    var kept = [];
+    for (var k = 0; k < cands.length; k++) {
+      var ok = true;
+      for (var m = 0; m < kept.length; m++) {
+        if (Math.abs(cands[k].pos - kept[m]) < minSep) { ok = false; break; }
+      }
+      if (ok) kept.push(cands[k].pos);
+    }
+    kept.sort(function (a, b) { return a - b; });
+    return kept;
+  }
+
+  /** Pull a hand-placed mark onto the nearest genuine edge, if one is close. */
+  function snap(pos) {
+    var box = $('cal-snap');
+    if (!C.sig || !box || !box.checked) return pos;
+    var n = C.sig.length;
+    var lo = Math.max(1, Math.round(pos - SNAP_RADIUS_PX));
+    var hi = Math.min(n - 2, Math.round(pos + SNAP_RADIUS_PX));
+    var best = -1, bestVal = -Infinity;
+    for (var i = lo; i <= hi; i++) {
+      if (C.sig[i] >= C.sig[i - 1] && C.sig[i] >= C.sig[i + 1] && C.sig[i] > bestVal) {
+        bestVal = C.sig[i]; best = i;
+      }
+    }
+    return best < 0 ? pos : refineAt(C.sig, best);
+  }
+
+  /**
+   * Assign an integer index to each mark, then regress position on index.
+   * Iterating lets an initially rough period settle before indices lock in.
+   */
+  function fitMarks(marks, period) {
+    if (marks.length < 2 || !(period > 0)) return null;
+    var slope = period, intercept = marks[0], idx = [];
+    for (var pass = 0; pass < 3; pass++) {
+      idx = [];
+      for (var i = 0; i < marks.length; i++) idx.push(Math.round((marks[i] - marks[0]) / slope));
+      var n = marks.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (var k = 0; k < n; k++) {
+        sx += idx[k]; sy += marks[k];
+        sxx += idx[k] * idx[k]; sxy += idx[k] * marks[k];
+      }
+      var det = n * sxx - sx * sx;
+      if (det === 0) return null;
+      slope = (n * sxy - sx * sy) / det;
+      intercept = (sy - slope * sx) / n;
+      if (!(slope > 0)) return null;
+    }
+    var res = [], ss = 0;
+    for (var j = 0; j < marks.length; j++) {
+      var r = marks[j] - (slope * idx[j] + intercept);
+      res.push(r); ss += r * r;
+    }
+    return {
+      slope: slope, intercept: intercept, idx: idx, residuals: res,
+      rms: Math.sqrt(ss / marks.length),
+      span: idx[idx.length - 1] - idx[0],
+      n: marks.length
+    };
+  }
+
+  // ===================================================================
+  // Detection and fitting
+  // ===================================================================
+
+  /** Full auto-detection. Discards any manual edits. */
+  function detect() {
+    C.marks = []; C.residuals = []; C.fit = null; C.pxPerMm = null;
+    C.error = null; C.warn = null; C.sig = null; C.period = null; C.dupes = {};
+    // While a line is being dragged, detect() runs once per frame. Each run
+    // must start from the mark set as it stood when the drag began, otherwise
+    // every frame's detection is added to the last frame's and the marks
+    // multiply for as long as the mouse is held down.
+    if (C.baseline) C.pts = C.baseline.map(function (p) { return { x: p.x, y: p.y }; });
+    rebuild();
+
+    if (!C.p0 || !C.p1) { C.error = 'Drag a line along the ruler.'; return; }
+    if (lineLength() < 25) { C.error = 'That line is too short to measure.'; return; }
+
+    var band = clamp(parseInt($('cal-band').value, 10) || 0, 0, 40);
+    C.profile = sampleProfile(band);
+
+    if ($('cal-mode').value === 'manual') { refit(); return; }
+
+    var rough = detrend(C.profile, Math.max(9, Math.round(C.profile.length / 15)));
+    var est = estimatePeriod(rough);
+    if (!est) {
+      // Hand-placed marks are still usable even when nothing regular is found.
+      if (C.marks.length) { refit(); return; }
+      C.error = 'No regular marks found along that line. Draw a longer line, or double-click to place marks by hand.';
+      return;
+    }
+    C.period = est.period;
+
+    // Re-detrend at a window tied to the period, which removes the background
+    // without eating into the marks themselves.
+    var flat = detrend(C.profile, Math.max(5, Math.round(est.period * 2.5)));
+
+    var best = null;
+    for (var s = 0; s < 2; s++) {
+      var polarity = s === 0 ? -1 : 1;   // dark marks first: the common case
+      var sig = new Float64Array(flat.length);
+      for (var i = 0; i < flat.length; i++) sig[i] = polarity * flat[i];
+      var marks = findMarks(sig, Math.max(2, est.period * 0.55));
+      if (marks.length < 2) continue;
+      var fit = fitMarks(marks, est.period);
+      if (!fit) continue;
+      var score = fit.n / (1 + fit.rms / est.period);
+      if (!best || score > best.score) best = { score: score, marks: marks, sig: sig, polarity: polarity };
+    }
+
+    if (!best) {
+      if (C.marks.length) { refit(); return; }
+      C.error = 'Marks could not be located. Try a wider band, or place them by hand.';
+      return;
+    }
+    C.sig = best.sig;
+    C.polarity = best.polarity;
+    addDetected(best.marks);
+    refit();
+  }
+
+  /** Recompute the fit from the current mark set. Runs after every manual edit. */
+  function refit() {
+    C.error = null; C.warn = null; C.fit = null; C.pxPerMm = null; C.residuals = []; C.dupes = {};
+
+    if (!C.p0 || !C.p1) { C.error = 'Drag a line along the ruler.'; return; }
+
+    if ($('cal-mode').value === 'manual') {
+      var known = parseFloat($('cal-known').value);
+      if (!(known > 0)) { C.error = 'Enter the distance between the two points.'; return; }
+      C.pxPerMm = lineLength() / known;
+      C.detail = 'Two points ' + lineLength().toFixed(1) + ' px apart, taken as ' + known + ' mm.';
+      return;
+    }
+
+    var spacing = parseFloat($('cal-spacing').value);
+    if (!(spacing > 0)) { C.error = 'Mark spacing must be greater than zero.'; return; }
+    if (C.marks.length < 2) { C.error = 'At least two marks are needed. Double-click the line to add one.'; return; }
+
+    var seed = C.period || (C.marks[C.marks.length - 1] - C.marks[0]) / Math.max(1, C.marks.length - 1);
+    var fit = fitMarks(C.marks, seed);
+    if (!fit) { C.error = 'Those marks do not form a regular series.'; return; }
+
+    C.fit = fit;
+    C.residuals = fit.residuals;
+    C.pxPerMm = fit.slope / spacing;
+
+    // Marks fitted to the same slot: one of each group is spurious, and the
+    // regression will quietly average them rather than complain. Record which
+    // ones, so they can be pointed at instead of merely reported.
+    var groups = [];
+    for (var i = 1; i < fit.idx.length; i++) {
+      if (fit.idx[i] === fit.idx[i - 1]) {
+        C.dupes[i] = true; C.dupes[i - 1] = true;
+        var last = groups[groups.length - 1];
+        if (last && last[last.length - 1] === i - 1) last.push(i);
+        else groups.push([i - 1, i]);
+      }
+    }
+
+    if (groups.length) {
+      var where = groups.map(function (g) {
+        var names = g.map(function (j) { return '#' + (j + 1); });
+        return names.join(' and ') + ' (' + C.marks[g[0]].toFixed(0) + '\u2013' +
+               C.marks[g[g.length - 1]].toFixed(0) + ' px along the line)';
+      }).join('; ');
+      C.warn = 'Sharing one slot in the series: ' + where +
+               '. Right-click the wrong one to remove it.';
+    } else if (fit.n < MIN_MARKS) {
+      C.warn = 'Only ' + fit.n + ' marks. Add more for a reliable fit.';
+    } else if (fit.rms > MAX_RESID_FRACTION * fit.slope) {
+      C.warn = 'Marks are irregularly spaced (RMS ' + fit.rms.toFixed(2) + ' px). Drag the amber and red ones onto the true positions.';
+    }
+
+    C.detail = fit.n + ' marks over ' + (fit.span * spacing).toFixed(2) + ' mm, ' +
+               fit.slope.toFixed(3) + ' px per mark, RMS residual ' + fit.rms.toFixed(2) + ' px' +
+               '';
+  }
+
+  // ===================================================================
+  // Mark editing
+  // ===================================================================
+
+  function markIndexNear(pt) {
+    if (!C.marks.length || !C.p0) return -1;
+    if (distanceToLine(pt) > LINE_HIT_PX / C.scale) return -1;
+    var t = projectOnto(pt);
+    var tol = MARK_HIT_PX / C.scale;
+    var best = -1, bestD = Infinity;
+    for (var i = 0; i < C.marks.length; i++) {
+      var d = Math.abs(C.marks[i] - t);
+      if (d < tol && d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  /* How close two marks must be to count as the same one. Tied to the period
+     so it scales with the ruler, never wide enough to swallow a neighbour. */
+  function mergeRadius() {
+    return Math.max(1.5, Math.min(3.5, (C.period || 6) * 0.35));
+  }
+
+  /** Distance from a point to a finite segment. */
+  function segDistance(pt, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var L2 = dx * dx + dy * dy;
+    var t = L2 ? clamp(((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2, 0, 1) : 0;
+    return Math.hypot(pt.x - (a.x + dx * t), pt.y - (a.y + dy * t));
+  }
+
+  /** Has the detector already looked at this spot on some earlier line? */
+  function alreadyInspected(pt) {
+    var tol = Math.max(4, mergeRadius() * 1.5);
+    for (var i = 0; i < C.covered.length; i++) {
+      if (segDistance(pt, C.covered[i].p0, C.covered[i].p1) <= tol) return true;
+    }
+    return false;
+  }
+
+  /** Remember the current line as inspected territory, before it is reshaped. */
+  function recordCoverage() {
+    if (!C.p0 || !C.p1) return;
+    C.covered.push({ p0: { x: C.p0.x, y: C.p0.y }, p1: { x: C.p1.x, y: C.p1.y } });
+    if (C.covered.length > 60) C.covered.shift();
+  }
+
+  /**
+   * Project the stored marks onto the current line. Marks that no longer lie on
+   * it simply drop out of the active set; they stay in C.pts, so bringing the
+   * line back over them restores them exactly where they were.
+   */
+  function rebuild() {
+    var L = lineLength(), rows = [];
+    for (var i = 0; i < C.pts.length; i++) {
+      var pr = projectRaw(C.pts[i]);
+      if (pr.perp <= PIN_PERP_PX && pr.t >= -1 && pr.t <= L + 1) {
+        rows.push({ t: clamp(pr.t, 0, L), p: C.pts[i] });
+      }
+    }
+    rows.sort(function (x, y) { return x.t - y.t; });
+
+    // Two marks closer together than the merge radius are the same mark.
+    // Drop the later one from the store outright rather than carrying an
+    // invisible duplicate around.
+    var r = mergeRadius(), kept = [];
+    for (var k = 0; k < rows.length; k++) {
+      if (kept.length && rows[k].t - kept[kept.length - 1].t < r) {
+        var dead = C.pts.indexOf(rows[k].p);
+        if (dead >= 0) C.pts.splice(dead, 1);
+        continue;
+      }
+      kept.push(rows[k]);
+    }
+    C.marks = kept.map(function (o) { return o.t; });
+    C.ptRef = kept.map(function (o) { return o.p; });
+  }
+
+  /**
+   * Fold a fresh detection into the store. A detected mark is kept only if it
+   * is somewhere the detector has not looked before, is not a mark we already
+   * hold, and is not one the user deleted. Extending the line therefore adds
+   * marks in the new stretch and leaves the rest untouched.
+   */
+  function addDetected(found) {
+    var r = mergeRadius(), added = false;
+    for (var a = 0; a < found.length; a++) {
+      var t = found[a], skip = false;
+      for (var j = 0; j < C.marks.length && !skip; j++) if (Math.abs(t - C.marks[j]) < r) skip = true;
+      if (skip) continue;
+      var pt = pointAt(t);
+      if (alreadyInspected(pt)) continue;
+      for (var v = 0; v < C.vetoes.length && !skip; v++) {
+        var pv = projectRaw(C.vetoes[v]);
+        if (pv.perp <= PIN_PERP_PX && Math.abs(t - pv.t) < r) skip = true;
+      }
+      if (skip) continue;
+      C.pts.push(pt);
+      added = true;
+    }
+    if (added) rebuild();
+  }
+
+  function endpointNear(pt) {
+    if (!C.p0 || !C.p1) return -1;
+    var tol = END_HIT_PX / C.scale;
+    var d0 = Math.hypot(pt.x - C.p0.x, pt.y - C.p0.y);
+    var d1 = Math.hypot(pt.x - C.p1.x, pt.y - C.p1.y);
+    if (d0 <= tol && d0 <= d1) return 0;
+    if (d1 <= tol) return 1;
+    return -1;
+  }
+
+  function addMarkAt(pt) {
+    if (!C.p0) return;
+    C.pts.push(pointAt(snap(projectOnto(pt))));
+    rebuild(); refit(); render();
+  }
+
+  function removeMark(i) {
+    if (i < 0 || i >= C.marks.length) return;
+    var ref = C.ptRef[i];
+    var k = C.pts.indexOf(ref);
+    if (k >= 0) C.pts.splice(k, 1);
+    C.vetoes.push({ x: ref.x, y: ref.y });   // so detection does not re-find it
+    rebuild();
+    C.hover = -1;
+    refit(); render();
+  }
+
+  /** Throw away every mark and every edit, then detect from scratch. */
+  function clearEdits() {
+    C.pts = []; C.vetoes = []; C.covered = []; C.ptRef = []; C.marks = [];
+  }
+
+  // ===================================================================
+  // Drawing
+  // ===================================================================
+
+  /** Residual colour: green on the series, amber drifting, red distorting it. */
+  function residualColour(i, alpha) {
+    var a = alpha === undefined ? 0.95 : alpha;
+    if (!C.fit || C.residuals[i] === undefined) return 'rgba(64, 255, 160, ' + a + ')';
+    var f = Math.abs(C.residuals[i]) / C.fit.slope;
+    if (f < 0.10) return 'rgba(64, 255, 160, ' + a + ')';
+    if (f < 0.25) return 'rgba(255, 196, 64, ' + a + ')';
+    return 'rgba(255, 96, 96, ' + a + ')';
+  }
+
+  function fitView() {
+    var stage = document.querySelector('.cal-stage');
+    var maxW = Math.max(240, stage.clientWidth - 2);
+    var maxH = Math.max(200, window.innerHeight * 0.46);
+    C.scale = Math.min(maxW / C.W, maxH / C.H);
+    var cv = $('cal-canvas');
+    var dpr = window.devicePixelRatio || 1;
+    cv.style.width = (C.W * C.scale) + 'px';
+    cv.style.height = (C.H * C.scale) + 'px';
+    cv.width = Math.round(C.W * C.scale * dpr);
+    cv.height = Math.round(C.H * C.scale * dpr);
+  }
+
+  function draw() {
+    var cv = $('cal-canvas');
+    if (!cv || !C.img) return;
+    var dpr = window.devicePixelRatio || 1;
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr * C.scale, 0, 0, dpr * C.scale, 0, 0);
+    ctx.clearRect(0, 0, C.W, C.H);
+    ctx.drawImage(C.img, 0, 0);
+
+    if (!C.p0 || !C.p1) return;
+    var k = 1 / C.scale;                     // keep stroke weights constant on screen
+    var u = unitAlong(), px = -u.y, py = u.x;
+    var band = clamp(parseInt($('cal-band').value, 10) || 0, 0, 40);
+
+    if (band > 0) {
+      ctx.fillStyle = 'rgba(31, 111, 139, 0.18)';
+      ctx.beginPath();
+      ctx.moveTo(C.p0.x + px * band, C.p0.y + py * band);
+      ctx.lineTo(C.p1.x + px * band, C.p1.y + py * band);
+      ctx.lineTo(C.p1.x - px * band, C.p1.y - py * band);
+      ctx.lineTo(C.p0.x - px * band, C.p0.y - py * band);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = 'rgba(255, 215, 64, 0.9)';
+    ctx.lineWidth = 1.6 * k;
+    ctx.beginPath();
+    ctx.moveTo(C.p0.x, C.p0.y);
+    ctx.lineTo(C.p1.x, C.p1.y);
+    ctx.stroke();
+
+    var dragI = C.drag && C.drag.type === 'mark' ? C.drag.i : -1;
+    var t = Math.max(5, band + 5);
+    for (var i = 0; i < C.marks.length; i++) {
+      var c = pointAt(C.marks[i]);
+      var active = (i === dragI || i === C.hover);
+      var len = active ? t * 1.5 : t;
+      ctx.strokeStyle = residualColour(i);
+      ctx.lineWidth = (active ? 2.4 : 1.3) * k;
+      ctx.beginPath();
+      ctx.moveTo(c.x + px * len, c.y + py * len);
+      ctx.lineTo(c.x - px * len, c.y - py * len);
+      ctx.stroke();
+      if (active) {
+        ctx.fillStyle = residualColour(i);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 3.2 * k, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    var dragEnd = C.drag && C.drag.type === 'end' ? C.drag.which : -1;
+    for (var e = 0; e < 2; e++) {
+      var pt = e === 0 ? C.p0 : C.p1;
+      var hot = (e === dragEnd || e === C.hoverEnd);
+      ctx.fillStyle = '#ffd740';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, (hot ? 6.5 : 4) * k, 0, Math.PI * 2);
+      ctx.fill();
+      if (hot) {
+        ctx.strokeStyle = 'rgba(18, 24, 28, 0.85)';
+        ctx.lineWidth = 1.6 * k;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 9.5 * k, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+  }
+
+  /** The intensity trace the detector is working from, with marks ruled through.
+   *  If this does not look periodic, no fit will make the number trustworthy. */
+  function drawProfile() {
+    var cv = $('cal-profile');
+    if (!cv) return;
+    var dpr = window.devicePixelRatio || 1;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    var p = C.profile;
+    if (!p || p.length < 2) return;
+    var n = p.length, lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < n; i++) { if (p[i] < lo) lo = p[i]; if (p[i] > hi) hi = p[i]; }
+    if (hi - lo < 1e-6) hi = lo + 1;
+
+    var pad = 4;
+    var X = function (v) { return (v / (n - 1)) * (w - 2 * pad) + pad; };
+    var Y = function (v) { return h - pad - ((v - lo) / (hi - lo)) * (h - 2 * pad); };
+
+    for (var m = 0; m < C.marks.length; m++) {
+      var x = Math.round(X(C.marks[m])) + 0.5;
+      ctx.strokeStyle = residualColour(m, 0.55);
+      ctx.lineWidth = (m === C.hover) ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#202b30';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(X(0), Y(p[0]));
+    for (var k = 1; k < n; k++) ctx.lineTo(X(k), Y(p[k]));
+    ctx.stroke();
+  }
+
+  function renderReadout() {
+    var out = $('cal-readout'), apply = $('cal-apply');
+    if (C.error || C.pxPerMm == null) {
+      out.textContent = C.error || 'Drag a line across the ruler marks.';
+      out.className = 'cal-readout is-bad';
+      apply.disabled = true;
+      return;
+    }
+    var widthMm = C.W / C.pxPerMm;
+    var head = C.pxPerMm.toFixed(3) + ' px/mm  \u2192  field width ' + widthMm.toFixed(2) + ' mm' +
+               '   (' + (1000 / C.pxPerMm).toFixed(2) + ' \u00b5m per pixel)';
+    var text = head + '\n' + (C.detail || '') + (C.warn ? '\n' + C.warn : '');
+    if (C.hover >= 0 && C.hover < C.marks.length && C.fit) {
+      var r = C.fit.residuals[C.hover];
+      text += '\nMark #' + (C.hover + 1) + ' of ' + C.marks.length +
+              ', slot ' + C.fit.idx[C.hover] +
+              ', residual ' + (r >= 0 ? '+' : '\u2212') + Math.abs(r).toFixed(2) + ' px';
+    }
+    out.textContent = text;
+    out.className = 'cal-readout' + (C.warn ? ' is-warn' : ' is-good');
+    apply.disabled = false;
+  }
+
+  function render() { draw(); drawProfile(); renderReadout(); }
+
+  /* Re-detection is O(n^2/3) in the line length because of the
+     autocorrelation, so while an endpoint is being dragged it runs at most
+     once per animation frame rather than once per pointer event. */
+  var pendingDetect = 0;
+  function scheduleDetect() {
+    if (pendingDetect) return;
+    pendingDetect = requestAnimationFrame(function () {
+      pendingDetect = 0;
+      detect();
+      render();
+    });
+  }
+  function flushDetect() {
+    if (pendingDetect) { cancelAnimationFrame(pendingDetect); pendingDetect = 0; }
+    detect();
+    render();
+  }
+
+  // ===================================================================
+  // Interaction
+  // ===================================================================
+
+  function toImage(ev) {
+    var b = $('cal-canvas').getBoundingClientRect();
+    var t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
+    return {
+      x: clamp((t.clientX - b.left) / C.scale, 0, C.W - 1),
+      y: clamp((t.clientY - b.top) / C.scale, 0, C.H - 1)
+    };
+  }
+
+  function startLine(pt) {
+    C.drag = { type: 'line' };
+    C.p0 = pt; C.p1 = pt;
+    C.marks = []; C.residuals = []; C.fit = null; C.pxPerMm = null;
+    C.sig = null; C.period = null; C.hover = -1;
+    // A new line is a fresh start. Keeping the old store here meant every mark
+    // from the previous line reappeared, projected onto the new one.
+    C.pts = []; C.vetoes = []; C.covered = []; C.ptRef = [];
+    C.baseline = [];
+  }
+
+  function onDown(e) {
+    if (!C.img) return;
+    var pt = toImage(e);
+
+    if (!C.p0) { e.preventDefault(); startLine(pt); render(); return; }
+
+    var ei = endpointNear(pt);
+    if (ei >= 0) {
+      e.preventDefault();
+      recordCoverage();
+      C.baseline = C.pts.map(function (p) { return { x: p.x, y: p.y }; });
+      C.drag = { type: 'end', which: ei };
+      render();
+      return;
+    }
+
+    var mi = markIndexNear(pt);
+    if (mi >= 0) {
+      e.preventDefault();
+      C.drag = { type: 'mark', i: mi, ref: C.ptRef[mi] };
+      render();
+      return;
+    }
+
+    // A modifier means "add a mark", so be generous about aim and never treat a
+    // near miss as a request to throw the line away.
+    var adding = e.shiftKey || e.altKey;
+    if (adding) {
+      if (distanceToLine(pt) <= ADD_HIT_PX / C.scale) { e.preventDefault(); addMarkAt(pt); }
+      return;
+    }
+
+    // Near the line but no modifier: do nothing. A slightly missed grab should
+    // not wipe the line the user has just spent time positioning.
+    if (distanceToLine(pt) <= LINE_HIT_PX / C.scale) return;
+
+    e.preventDefault();
+    startLine(pt);
+    render();
+  }
+
+  function onMove(e) {
+    if (!C.img || !C.p0) return;
+    var pt = toImage(e);
+
+    if (!C.drag) {
+      var ei = endpointNear(pt);
+      var mi = ei >= 0 ? -1 : markIndexNear(pt);
+      if (mi !== C.hover || ei !== C.hoverEnd) {
+        C.hover = mi; C.hoverEnd = ei;
+        render();
+      }
+      $('cal-canvas').style.cursor = ei >= 0 ? 'move' : (mi >= 0 ? 'ew-resize' : 'crosshair');
+      return;
+    }
+
+    e.preventDefault();
+    if (C.drag.type === 'end') {
+      if (C.drag.which === 0) C.p0 = pt; else C.p1 = pt;
+      draw();
+      scheduleDetect();
+      return;
+    }
+    if (C.drag.type === 'line') {
+      C.p1 = pt;
+      draw();
+      scheduleDetect();
+    } else {
+      C.marks[C.drag.i] = projectOnto(pt);
+      C.edited = true;
+      refit();
+      render();
+    }
+  }
+
+  function onUp() {
+    if (!C.drag) return;
+    var d = C.drag;
+    C.drag = null;
+    if (d.type === 'line' || d.type === 'end') {
+      flushDetect();
+      C.baseline = null;
+      return;
+    }
+    {
+      var to = pointAt(snap(C.marks[d.i]));
+      if (d.ref) { d.ref.x = to.x; d.ref.y = to.y; }
+      rebuild();
+      C.hover = C.ptRef.indexOf(d.ref);
+      refit();
+    }
+    render();
+  }
+
+  /** Double-click adds a mark. Safe to bind because a plain click near the line
+   *  is already inert, so the preceding mousedown cannot have disturbed
+   *  anything. */
+  function onDblClick(e) {
+    if (!C.img || !C.p0) return;
+    var pt = toImage(e);
+    if (markIndexNear(pt) >= 0) return;            // don't stack one on an existing mark
+    if (distanceToLine(pt) > ADD_HIT_PX / C.scale) return;
+    e.preventDefault();
+    addMarkAt(pt);
+  }
+
+  function onContextMenu(e) {
+    if (!C.img || !C.p0) return;
+    var mi = markIndexNear(toImage(e));
+    if (mi < 0) return;
+    e.preventDefault();
+    removeMark(mi);
+  }
+
+  // ===================================================================
+  // Apply and modal plumbing
+  // ===================================================================
+
+  function applyResult() {
+    if (C.error || C.pxPerMm == null) return;
+    var widthMm = C.W / C.pxPerMm;
+    var input = $('psd-width-mm');
+    var min = parseFloat(input.min), max = parseFloat(input.max);
+    var clamped = clamp(widthMm, min, max);
+
+    input.value = clamped.toFixed(2);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    if (Math.abs(clamped - widthMm) > 0.005) {
+      setSummary('Measured ' + widthMm.toFixed(2) + ' mm, but the Width field is limited to ' +
+                 min + '\u2013' + max + ' mm, so ' + clamped.toFixed(2) + ' mm was used. Widen the range to use the measured value.',
+                 'is-cal-warn');
+    } else {
+      setSummary('Scale set from ruler: ' + C.pxPerMm.toFixed(3) + ' px/mm, field width ' +
+                 widthMm.toFixed(2) + ' mm.' +
+                 (C.warn ? ' ' + C.warn : ''),
+                 C.warn ? 'is-cal-warn' : 'is-cal-ok');
+    }
+    closeModal();
+  }
+
+  function openModal() {
+    if (!C.img) return;
+    $('cal-modal').hidden = false;
+    fitView();
+    render();
+  }
+
+  function closeModal() { $('cal-modal').hidden = true; }
+
+  // ===================================================================
+  // Binding
+  // ===================================================================
+
+  function init() {
+    if (!$('psd-app') || !$('cal-modal')) return;
+
+    var fileInput = $('psd-file');
+    if (fileInput) fileInput.addEventListener('change', function () { loadFromFile(fileInput.files[0]); });
+    var viewer = $('psd-viewer');
+    if (viewer) {
+      viewer.addEventListener('drop', function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadFromFile(f);
+      });
+    }
+
+    $('cal-open').addEventListener('click', openModal);
+    $('cal-close').addEventListener('click', closeModal);
+    $('cal-cancel').addEventListener('click', closeModal);
+    $('cal-apply').addEventListener('click', applyResult);
+    $('cal-redetect').addEventListener('click', function () { clearEdits(); detect(); render(); });
+    $('cal-redraw').addEventListener('click', function () { resetLine(); render(); });
+
+    $('cal-modal').addEventListener('mousedown', function (e) {
+      if (e.target === $('cal-modal')) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('cal-modal').hidden) closeModal();
+    });
+
+    $('cal-mode').addEventListener('change', function () {
+      var manual = $('cal-mode').value === 'manual';
+      $('cal-known-row').hidden = !manual;
+      $('cal-spacing-row').hidden = manual;
+      $('cal-snap-row').hidden = manual;
+      $('cal-redetect').hidden = manual;
+      $('cal-instruction').textContent = manual
+        ? 'Drag from one ruler mark to another, then enter how far apart they are.'
+        : 'Drag a line along the ruler. Drag either yellow end dot to reshape it, drag a mark to move it, double-click the line to add one, right-click a mark to remove it.';
+      detect(); render();
+    });
+
+    $('cal-band').addEventListener('input', function () { detect(); render(); });
+    $('cal-spacing').addEventListener('input', function () { refit(); render(); });
+    $('cal-known').addEventListener('input', function () { refit(); render(); });
+
+    var cv = $('cal-canvas');
+    cv.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    cv.addEventListener('dblclick', onDblClick);
+    cv.addEventListener('contextmenu', onContextMenu);
+    cv.addEventListener('touchstart', onDown, { passive: false });
+    cv.addEventListener('touchmove', onMove, { passive: false });
+    cv.addEventListener('touchend', onUp);
+
+    window.addEventListener('resize', function () {
+      if ($('cal-modal').hidden) return;
+      fitView(); render();
+    });
+  }
+
+  window.PSDCalibrate = { state: C, detect: detect, refit: refit, open: openModal };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+
+<!-- Region-of-interest dragging and stage zoom. Must come after psd.v2.js. -->
+<script>
+/*
+ * roi-zoom — direct manipulation of the analysis ellipse, plus a zoomable stage.
+ *
+ * Does not compute anything. It drives the #psd-ell-* sliders and lets
+ * psd.v2.js react through the events it already listens for: 'input' while
+ * dragging for a live redraw, 'change' on release to trigger re-segmentation.
+ */
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function fire(el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); }
+
+  var drag = null;
+  var clamping = false;
+
+  /*
+   * Keep the ellipse inside the image. A radius of aPct is aPct/200 of the
+   * image width, so its half-extent as a percentage of the width is aPct/2,
+   * and the centre has to stay that far from either edge. When the ellipse is
+   * wider than the image it cannot be contained at all, so it is pinned to the
+   * middle, which is exactly the "no exclusion" case the 150% setting is for.
+   */
+  function centreLimits() {
+    var a = parseFloat($('psd-ell-a').value), b = parseFloat($('psd-ell-b').value);
+    var sx = parseFloat($('psd-ell-cx').step) || 1;
+    var sy = parseFloat($('psd-ell-cy').step) || 1;
+    // Round the limits INWARDS onto the slider's step grid. A range input
+    // snaps an off-grid value to the nearest step, which can push a correctly
+    // clamped centre back over the edge by up to half a step.
+    function inward(lo, hi, step) {
+      var l = Math.ceil(lo / step - 1e-9) * step;
+      var h = Math.floor(hi / step + 1e-9) * step;
+      return l > h ? [50, 50] : [l, h];
+    }
+    var x = inward(Math.min(a / 2, 50), Math.max(100 - a / 2, 50), sx);
+    var y = inward(Math.min(b / 2, 50), Math.max(100 - b / 2, 50), sy);
+    return { xLo: x[0], xHi: x[1], yLo: y[0], yHi: y[1] };
+  }
+
+  function setSlider(id, value) {
+    var el = $(id);
+    var step = parseFloat(el.step) || 1;
+    var v = Math.round(value / step) * step;
+    v = clamp(v, parseFloat(el.min), parseFloat(el.max));
+    if (id === 'psd-ell-cx' || id === 'psd-ell-cy') {
+      var L = centreLimits();
+      v = id === 'psd-ell-cx' ? clamp(v, L.xLo, L.xHi) : clamp(v, L.yLo, L.yHi);
+    }
+    if (String(v) === el.value) return;
+    el.value = v;
+    fire(el, 'input');
+  }
+
+  /** Pull the centre back inside after the ellipse has been resized. */
+  function enforceContainment() {
+    if (clamping) return false;
+    var L = centreLimits(), moved = false;
+    clamping = true;
+    [['psd-ell-cx', L.xLo, L.xHi], ['psd-ell-cy', L.yLo, L.yHi]].forEach(function (row) {
+      var el = $(row[0]);
+      var v = clamp(parseFloat(el.value), row[1], row[2]);
+      if (String(v) !== el.value) { el.value = v; moved = true; }
+    });
+    clamping = false;
+    if (moved) { fire($('psd-ell-cx'), 'input'); fire($('psd-ell-cy'), 'input'); }
+    return moved;
+  }
+
+  // ---------- resolution floor for D-Min ---------------------------------
+
+  /*
+   * The smallest thing the segmenter can return is one pixel. Its equivalent
+   * circular diameter is 2*sqrt(1/pi) * (um per pixel), about 1.128 times the
+   * pixel pitch, not one pixel pitch: the app measures area and converts to a
+   * circle of equal area. Searching below that floor cannot find anything, and
+   * leaving D-Min above it silently discards real fines, so the floor is
+   * applied to the slider whenever the scale changes.
+   */
+  function applyPixelFloor() {
+    var cv = $('psd-image-canvas');
+    if (!cv || !cv.width) return;
+    var mm = parseFloat($('psd-width-mm').value);
+    if (!(mm > 0)) return;
+
+    var umPerPx = mm * 1000 / cv.width;
+    var floorUm = 2 * Math.sqrt(1 / Math.PI) * umPerPx;
+
+    var el = $('psd-dmin');
+    var step = parseFloat(el.step) || 1;
+    var lo = Math.ceil(floorUm / step - 1e-9) * step;
+    if (lo > parseFloat(el.max)) el.max = String(Math.ceil(lo * 2 / step) * step);
+    el.min = String(lo);
+    if (el.value !== String(lo)) { el.value = lo; fire(el, 'input'); }
+
+    var hint = $('psd-dmin-hint');
+    if (hint) {
+      hint.textContent = 'Floor ' + floorUm.toFixed(1) + ' \u00b5m: the diameter of a single ' +
+        umPerPx.toFixed(2) + ' \u00b5m pixel. Nothing below this can be resolved.';
+    }
+  }
+
+  // ---------- zoom -------------------------------------------------------
+
+  function aspectOf(frame) {
+    var m = /([\d.]+)\s*\/\s*([\d.]+)/.exec(frame.style.aspectRatio || '');
+    return m ? (+m[1]) / (+m[2]) : 0;
+  }
+
+  /* psd.v2.js sizes the frame as min(100%, 74vh * aspect). Zoom multiplies
+     that same expression, so at 100% the layout is byte-for-byte what the
+     original produced. */
+  function applyZoom() {
+    var frame = $('psd-viewer-frame'), viewer = $('psd-viewer');
+    var z = (parseFloat($('psd-zoom').value) || 100) / 100;
+    $('psd-zoom-val').value = Math.round(z * 100) + ' %';
+    var ar = aspectOf(frame);
+    if (!ar) return;
+    var base = 'min(100%, ' + (74 * ar).toFixed(4) + 'vh)';
+    frame.style.width = z === 1 ? base : 'calc(' + base + ' * ' + z + ')';
+    viewer.classList.toggle('is-zoomed', z > 1);
+    frame.classList.toggle('is-magnified', z >= 2);
+  }
+
+  function resetZoom() { $('psd-zoom').value = 100; applyZoom(); }
+
+  // ---------- ellipse geometry in screen space ---------------------------
+
+  function geom() {
+    var r = $('psd-overlay-canvas').getBoundingClientRect();
+    return {
+      rect: r,
+      cx: r.left + r.width * (parseFloat($('psd-ell-cx').value) / 100),
+      cy: r.top + r.height * (parseFloat($('psd-ell-cy').value) / 100),
+      a: r.width * (parseFloat($('psd-ell-a').value) / 200),
+      b: r.height * (parseFloat($('psd-ell-b').value) / 200)
+    };
+  }
+
+  /** Distance from the ellipse centre in units of its own radii: 1 is the rim. */
+  function normDist(g, x, y) {
+    return Math.hypot((x - g.cx) / Math.max(g.a, 1e-6), (y - g.cy) / Math.max(g.b, 1e-6));
+  }
+
+  function pointer(e) {
+    var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    return { x: t.clientX, y: t.clientY };
+  }
+
+  function onDown(e) {
+    if (!$('psd-app').classList.contains('has-image')) return;
+    var p = pointer(e), g = geom();
+    var d = normDist(g, p.x, p.y);
+    if (d > 1.2) return;                      // outside: leave the event for scrolling
+    e.preventDefault();
+    drag = {
+      resize: !!(e.shiftKey || e.altKey) || d > 0.85,
+      x: p.x, y: p.y, d: d, rect: g.rect,
+      cx: parseFloat($('psd-ell-cx').value), cy: parseFloat($('psd-ell-cy').value),
+      a: parseFloat($('psd-ell-a').value), b: parseFloat($('psd-ell-b').value)
+    };
+  }
+
+  function onMove(e) {
+    var p = pointer(e);
+
+    if (!drag) {
+      if (!$('psd-app').classList.contains('has-image')) return;
+      var d0 = normDist(geom(), p.x, p.y);
+      $('psd-overlay-canvas').style.cursor =
+        d0 > 1.2 ? '' : (d0 > 0.85 ? 'nwse-resize' : 'move');
+      return;
+    }
+
+    e.preventDefault();
+    var r = drag.rect;
+
+    if (drag.resize) {
+      // Scale both radii by how much further from the centre the pointer has
+      // travelled, measured in the ellipse's own units.
+      var cxp = r.left + r.width * drag.cx / 100;
+      var cyp = r.top + r.height * drag.cy / 100;
+      var a0 = r.width * drag.a / 200, b0 = r.height * drag.b / 200;
+      var n0 = Math.hypot((drag.x - cxp) / a0, (drag.y - cyp) / b0) || 1;
+      var n1 = Math.hypot((p.x - cxp) / a0, (p.y - cyp) / b0);
+      var k = clamp(n1 / n0, 0.02, 20);
+      setSlider('psd-ell-a', drag.a * k);
+      setSlider('psd-ell-b', drag.b * k);
+      enforceContainment();
+    } else {
+      setSlider('psd-ell-cx', drag.cx + (p.x - drag.x) / r.width * 100);
+      setSlider('psd-ell-cy', drag.cy + (p.y - drag.y) / r.height * 100);
+    }
+  }
+
+  function onUp() {
+    if (!drag) return;
+    drag = null;
+    // 'change' is what makes psd.v2.js re-run the segmentation.
+    fire($('psd-ell-cx'), 'change');
+    fire($('psd-ell-cy'), 'change');
+    fire($('psd-ell-a'), 'change');
+    fire($('psd-ell-b'), 'change');
+  }
+
+  function resetRoi() {
+    ['psd-ell-cx', 'psd-ell-cy'].forEach(function (id) { $(id).value = 50; fire($(id), 'input'); });
+    ['psd-ell-a', 'psd-ell-b'].forEach(function (id) { $(id).value = 100; fire($(id), 'input'); });
+    fire($('psd-ell-a'), 'change');
+  }
+
+  function init() {
+    if (!$('psd-app') || !$('psd-zoom')) return;
+
+    ['psd-ell-a', 'psd-ell-b'].forEach(function (id) {
+      $(id).addEventListener('input', enforceContainment);
+      $(id).addEventListener('change', enforceContainment);
+    });
+    ['psd-ell-cx', 'psd-ell-cy'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        if (clamping) return;
+        var L = centreLimits();
+        var lo = id === 'psd-ell-cx' ? L.xLo : L.yLo;
+        var hi = id === 'psd-ell-cx' ? L.xHi : L.yHi;
+        var el = $(id), v = clamp(parseFloat(el.value), lo, hi);
+        if (String(v) !== el.value) {
+          clamping = true; el.value = v; clamping = false;
+          fire(el, 'input');
+        }
+      });
+    });
+    enforceContainment();
+
+    // The canvas width attribute is rewritten by psd.v2.js the moment a new
+    // image is decoded, which is the earliest reliable signal that the scale
+    // has changed.
+    if (typeof MutationObserver !== 'undefined') {
+      new MutationObserver(applyPixelFloor).observe($('psd-image-canvas'),
+        { attributes: true, attributeFilter: ['width'] });
+    }
+    $('psd-width-mm').addEventListener('change', applyPixelFloor);
+    applyPixelFloor();
+
+    $('psd-zoom').addEventListener('input', applyZoom);
+    $('psd-zoom-reset').addEventListener('click', resetZoom);
+    $('psd-roi-reset').addEventListener('click', resetRoi);
+
+    // A new image gets a fresh frame width from psd.v2.js, so start at Fit
+    // rather than fighting it for control of the inline style.
+    var file = $('psd-file');
+    if (file) file.addEventListener('change', function () { $('psd-zoom').value = 100; applyZoom(); });
+    var viewer = $('psd-viewer');
+    if (viewer) viewer.addEventListener('drop', function () { $('psd-zoom').value = 100; applyZoom(); });
+
+    var ov = $('psd-overlay-canvas');
+    ov.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    ov.addEventListener('touchstart', onDown, { passive: false });
+    ov.addEventListener('touchmove', onMove, { passive: false });
+    ov.addEventListener('touchend', onUp);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+</body>
+</html>
