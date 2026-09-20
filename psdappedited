@@ -1,0 +1,387 @@
+<style>
+  :root {
+    --page: #eceeed;
+    --surface: #fbfcfc;
+    --ink: #202b30;
+    --muted: #5e6a70;
+    --rule: #d4d9da;
+    --accent: #1f6f8b;
+    --accent-ink: #ffffff;
+    --stage: #262e32;
+    --d50: #118811;
+    --font: system-ui, "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page); color: var(--ink);
+    font: 14px/1.45 var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #psd-app {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+  }
+  .psd-header {
+    grid-column: 1 / -1;
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding: 14px 24px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  .psd-header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.005em; }
+  #psd-status { color: var(--muted); font-size: 13px; }
+  #psd-status.is-error { color: #a33b2b; }
+
+  /* ---------- Controls ---------- */
+  .psd-controls {
+    background: var(--surface);
+    border-right: 1px solid var(--rule);
+    padding: 8px 20px 24px;
+    overflow-y: auto;
+  }
+  @media (min-width: 901px) {
+    .psd-controls { position: sticky; top: 0; max-height: 100vh; align-self: start; }
+  }
+  fieldset { border: 0; margin: 0; padding: 14px 0 16px; border-bottom: 1px solid var(--rule); }
+  fieldset:last-of-type { border-bottom: 0; }
+  legend { padding: 0; margin-bottom: 8px; font-weight: 600; font-size: 14px; }
+  .psd-field { margin-top: 10px; }
+  .psd-field:first-of-type { margin-top: 0; }
+  .psd-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .psd-row label { color: var(--ink); }
+  output { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .psd-hint { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+
+  input[type=range] { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+  .psd-check { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
+  .psd-check input { margin-top: 2px; }
+  legend + .psd-check { margin-top: 0; }
+  .psd-check-view { font-weight: 600; }
+  .is-disabled { opacity: 0.45; }
+
+  input[type=number] {
+    width: 96px; padding: 5px 8px; font: inherit; color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px; background: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .psd-button {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 6px 12px; font: inherit; font-size: 13.5px; line-height: 1.3;
+    border: 1px solid var(--accent); border-radius: 4px; cursor: pointer;
+    background: #fff; color: var(--accent);
+  }
+  .psd-button-primary { background: var(--accent); color: var(--accent-ink); }
+  .psd-button:disabled { opacity: 0.4; cursor: default; }
+  .psd-button-small { padding: 2px 9px; font-size: 12.5px; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #psd-file:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .psd-series { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+  .psd-series .psd-check { margin-top: 0; }
+
+  /* ---------- Main ---------- */
+  .psd-main { padding: 20px 24px 40px; min-width: 0; }
+
+  /* The stage: a dark surround so the field of view reads like an eyepiece */
+  #psd-viewer {
+    background: var(--stage);
+    border-radius: 6px;
+    padding: 14px;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 320px;
+  }
+  #psd-viewer.is-drop { box-shadow: inset 0 0 0 2px #7fc6de; }
+  #psd-viewer-frame { position: relative; width: 100%; display: none; }
+  .has-image #psd-viewer-frame { display: block; }
+  #psd-image-canvas, #psd-overlay-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  }
+  #psd-image-canvas { image-rendering: auto; background: #111; }
+  .psd-empty { color: #b9c3c7; text-align: center; font-size: 14.5px; }
+  .psd-empty p { margin: 0 0 12px; }
+  .has-image .psd-empty { display: none; }
+
+  #psd-legend {
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+    margin: 10px 2px 0; font-size: 12.5px; color: var(--muted);
+  }
+  #psd-legend[hidden] { display: none; }
+  .psd-key { display: inline-flex; align-items: center; gap: 6px; }
+  .psd-key i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; border: 1px solid rgba(0,0,0,.15); }
+
+  .psd-results { margin-top: 22px; }
+  .psd-results-head {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px;
+  }
+  .psd-results h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .psd-results h2 #psd-n { font-variant-numeric: tabular-nums; }
+  #psd-counts { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  #psd-results-note {
+    margin: 12px 0 0; padding: 8px 12px; border-left: 3px solid var(--accent);
+    background: var(--surface); font-size: 13.5px;
+  }
+  #psd-results-note[hidden] { display: none; }
+  .psd-results-body { transition: opacity .15s; }
+  .is-stale .psd-results-body { opacity: 0.45; }
+  #psd-app:not(.has-results) .psd-results-body { display: none; }
+  @media (prefers-reduced-motion: reduce) { .psd-results-body { transition: none; } }
+
+  .psd-pool {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 10px 14px; margin-bottom: 14px;
+  }
+  .psd-pool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .psd-pool-actions .psd-check { margin: 0 6px 0 0; }
+  #psd-cumulative-summary { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  #psd-add-hint { margin-top: 6px; }
+  #psd-add-hint:empty { display: none; }
+  #psd-add-hint.is-warning { color: #9a5a0f; }
+  #psd-clear-cumulative.is-armed { background: #a33b2b; border-color: #a33b2b; color: #fff; }
+  .is-combined .psd-results-head h2 { color: var(--accent); }
+  #psd-n-suffix { font-weight: 500; }
+
+  .psd-pool-images { margin-top: 26px; }
+  .psd-pool-images[hidden] { display: none; }
+  .psd-pool-images h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .psd-pool-images .psd-hint { max-width: 72ch; }
+  .psd-pool-table { margin-top: 10px; }
+  .psd-pool-table tbody th { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .psd-pool-table .psd-running { background: var(--d50); }
+  .psd-pool-table thead th { vertical-align: bottom; line-height: 1.25; }
+
+  table.psd-stats {
+    border-collapse: collapse; margin-top: 14px; min-width: 460px;
+    background: var(--surface); font-variant-numeric: tabular-nums;
+  }
+  .psd-stats th, .psd-stats td { padding: 7px 14px; text-align: right; border-bottom: 1px solid var(--rule); }
+  .psd-stats thead th { font-weight: 600; font-size: 13px; color: var(--surface); border-bottom-color: var(--ink); }
+  .psd-stats tbody th { text-align: left; font-weight: 500; }
+  .psd-stats .psd-d50 { background: var(--d50); font-weight: 600; }
+  .psd-sym { color: var(--muted); font-size: 12px; margin-left: 2px; }
+  .psd-swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 8px; }
+  .psd-swatch-number { background: #3b63a6; }
+  .psd-swatch-area { background: repeating-linear-gradient(90deg, #b0701c 0 5px, transparent 5px 8px); }
+  .psd-swatch-volume { background: #2d7a58; height: 4px; }
+  .psd-table-wrap { overflow-x: auto; }
+
+  .psd-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+  .psd-chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 10px 6px; }
+  .psd-chart h3 { margin: 0 0 2px 4px; font-size: 14px; font-weight: 600; }
+  .psd-chart canvas {
+    display: block; width: 100%; height: 300px;
+    --chart-ink: #202b30; --chart-muted: #5e6a70; --chart-grid: #e4e8e9;
+    font-family: var(--font);
+  }
+  #psd-dist-note { margin: 4px 4px 0; font-size: 12px; color: var(--muted); }
+  #psd-dist-note[hidden] { display: none; }
+
+  @media (max-width: 1200px) { .psd-charts { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 900px) {
+    #psd-app { grid-template-columns: minmax(0, 1fr); }
+    .psd-controls { border-right: 0; border-bottom: 1px solid var(--rule); }
+    .psd-main { padding: 16px; }
+    table.psd-stats { min-width: 0; width: 100%; }
+    .psd-stats th, .psd-stats td { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="psd-app">
+  <header class="psd-header">
+    <h1>Coffee particle size analysis</h1>
+    <span id="psd-status" role="status" aria-live="polite">Open a microscope image to begin.</span>
+  </header>
+
+  <aside class="psd-controls">
+    <fieldset>
+      <legend>Image</legend>
+      <div class="psd-field">
+        <input id="psd-file" class="visually-hidden" type="file" accept="image/*">
+        <label for="psd-file" class="psd-button psd-button-primary">Open image…</label>
+      </div>
+      <div class="psd-field psd-row">
+        <label for="psd-width-mm">Width (mm)</label>
+        <input id="psd-width-mm" type="number" min="10" max="40" step="0.1" value="25">
+      </div>
+      <p id="psd-scale-info" class="psd-hint">Real width of full image => correct µm scale.</p>
+    </fieldset>
+
+    <fieldset>
+      <label class="psd-check psd-check-view">
+        <input id="psd-show-threshold" type="checkbox">
+        <span>Thresholded view</span>
+      </label>
+      <p class="psd-hint">Original = unchecked, Analysis = checked</p>
+      <div class="psd-field">
+        <div class="psd-row">
+          <label for="psd-threshold">Threshold</label>
+          <span><output id="psd-threshold-val" for="psd-threshold">128</output>
+ </span>
+        </div>
+        <input id="psd-threshold" type="range" min="0" max="255" step="1" value="55">
+        <p class="psd-hint">Coffee = Pixels less than this value</p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Region of interest</legend>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-ell-a">Ellipse width, a</label><output id="psd-ell-a-val" for="psd-ell-a">100 %</output></div>
+        <input id="psd-ell-a" type="range" min="75" max="150" step="1" value="100">
+      </div>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-ell-b">Ellipse height, b</label><output id="psd-ell-b-val" for="psd-ell-b">100 %</output></div>
+        <input id="psd-ell-b" type="range" min="75" max="150" step="1" value="100">
+      </div>
+      <p class="psd-hint">Exclude particles in low contrast corners.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Touching particles</legend>
+      <label class="psd-check">
+        <input id="psd-split" type="checkbox">
+        <span>Separate touching</span>
+      </label>
+      <div id="psd-neck-row" class="psd-field is-disabled">
+        <div class="psd-row"><label for="psd-neck">Neck ratio</label><output id="psd-neck-val" for="psd-neck">0.70</output></div>
+        <input id="psd-neck" type="range" min="0.3" max="0.9" step="0.05" value="0.7" disabled>
+        <p class="psd-hint">Higher values split more.</p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Size range</legend>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-dmin">D-Min</label><output id="psd-dmin-val" for="psd-dmin">50 µm</output></div>
+        <input id="psd-dmin" type="range" min="0" max="100" step="1" value="50">
+      </div>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-dmax">D-Max</label><output id="psd-dmax-val" for="psd-dmax">1200 µm</output></div>
+        <input id="psd-dmax" type="range" min="1000" max="2000" step="10" value="1200">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Plots</legend>
+      <div class="psd-field">
+        <div class="psd-row"><label for="psd-bins">Number of bins</label><output id="psd-bins-val" for="psd-bins">15</output></div>
+        <input id="psd-bins" type="range" min="10" max="20" step="1" value="15">
+      </div>
+       <label class="psd-check"><input title="Show KDE (smooth) plot" id="psd-kde" type="checkbox"><span>KDE Plot</span></label>
+     <label class="psd-check"><input title="Log₁₀ plot (10–2000 µm)" id="psd-log" type="checkbox"><span>Log₁₀ plot</span></label>
+      <label class="psd-check"><input title="Frequency plot rather than Probability Density" id="psd-frequency" type="checkbox"><span>Frequency plot</span></label>
+      <div class="psd-series" role="group" aria-label="Series shown">
+        <label class="psd-check"><input title="Show Number plot" id="psd-series-number" type="checkbox" checked><span>N</span></label>
+        <label class="psd-check"><input title="Show Area plot"  id="psd-series-area" type="checkbox" checked><span>A</span></label>
+        <label class="psd-check"><input title="Show Volume plot" id="psd-series-volume" type="checkbox" checked><span>V</span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Data</legend>
+      <button id="psd-export" class="psd-button" type="button" disabled>Export CSV</button>
+      <p class="psd-hint">All relevant details.</p>
+    </fieldset>
+  </aside>
+
+  <main class="psd-main">
+    <div id="psd-viewer">
+      <div class="psd-empty">
+        <p>Open an image, or drop one here.</p>
+      </div>
+      <div id="psd-viewer-frame">
+        <canvas id="psd-image-canvas"></canvas>
+        <canvas id="psd-overlay-canvas"></canvas>
+      </div>
+    </div>
+    <div id="psd-legend" hidden>
+      <span class="psd-key"><i style="background:#262e34"></i>Included</span>
+      <span class="psd-key"><i style="background:#e08624"></i>Touches edge</span>
+      <span class="psd-key"><i style="background:#428cd6"></i>Below minimum size</span>
+      <span class="psd-key"><i style="background:#c44096"></i>Above maximum size</span>
+      <span class="psd-key"><i style="background:#e2e5e7"></i>Outside ellipse</span>
+    </div>
+
+    <section class="psd-results" aria-labelledby="psd-results-title">
+      <div class="psd-pool" role="group" aria-label="Cumulative data from several images">
+        <div class="psd-pool-actions">
+          <label class="psd-check psd-check-view"><input id="psd-show-cumulative" type="checkbox"><span>Show Cumulative</span></label>
+          <button id="psd-add-cumulative" class="psd-button psd-button-primary" type="button" disabled>Add to Cumulative</button>
+          <button id="psd-clear-cumulative" class="psd-button" type="button" disabled>Clear Cumulative</button>
+          <span id="psd-cumulative-summary">Cumulative is empty</span>
+        </div>
+        <p id="psd-add-hint" class="psd-hint">Load and analyse an image to add it.</p>
+      </div>
+      <p id="psd-results-note">Load a microscope image to begin.</p>
+      <div class="psd-results-body">
+        <div class="psd-results-head">
+          <div>
+            <h2 id="psd-results-title"><span id="psd-n">–</span> particles included<span id="psd-n-suffix"></span></h2>
+            <p id="psd-counts"></p>
+          </div>
+        </div>
+        <div class="psd-table-wrap">
+          <table class="psd-stats">
+            <thead>
+              <tr><th scope="col" style="text-align:left">Distribution</th><th scope="col">Mean (µm)</th><th scope="col">D10 (µm)</th><th scope="col" class="psd-d50">D50 (µm)</th><th scope="col">D90 (µm)</th></tr>
+            </thead>
+            <tbody id="psd-stats-body"></tbody>
+          </table>
+        </div>
+
+        <div class="psd-charts">
+          <div class="psd-chart">
+            <h3>Distribution</h3>
+            <canvas id="psd-chart-dist" role="img" aria-label="Particle size distribution histogram"></canvas>
+            <p id="psd-dist-note" hidden></p>
+          </div>
+          <div class="psd-chart">
+            <h3>Cumulative undersize</h3>
+            <canvas id="psd-chart-cum" role="img" aria-label="Cumulative undersize curves"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <section id="psd-pool-section" class="psd-pool-images" aria-labelledby="psd-pool-title" hidden>
+        <h3 id="psd-pool-title">Images in Cumulative</h3>
+        <p class="psd-hint">Running values pool images 1 to n with the current size range. When they stop changing as images are added, the pooled result is stable. Hover over a file name to see its settings.</p>
+        <div class="psd-table-wrap">
+          <table class="psd-stats psd-pool-table">
+            <thead>
+              <tr>
+                <th scope="col">#</th><th scope="col" style="text-align:left">Image</th>
+                <th scope="col">Particles</th><th scope="col">D50 number (µm)</th><th scope="col">D50 volume (µm)</th>
+                <th scope="col" class="psd-running">Running particles</th><th scope="col" class="psd-running">Running D50 number (µm)</th><th scope="col" class="psd-running">Running D50 volume (µm)</th>
+                <th scope="col"><span class="visually-hidden">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody id="psd-pool-body"></tbody>
+          </table>
+        </div>
+       </section>
+    </section>
+ </main>
+ </div>
+ <p></p>
+<h3>PSD Guide</h3>
+<p>You have an image of coffee particles taken via a microscope with a fixed field of view (so that all images are easily co-analysed). You've measured the width of that field, in mm, and you enter that near the top to provide an absolute scale. There is a trade-off of narrow width and high resolution but fewer particles, and wide width, lower resolution but more particles.</p>
+<p>You select the image and check that it looks OK. If not, choose another.</p>
+<p>Many microscopes have a brightness fade-off towards the corners. This makes it impossible to balance the "threshold" of the core image with these outer portions. Using the two <b>Ellipses</b>, you can choose what to include or exclude from the analysis. If your image is uniform, set them both to 150%, so there's no exclusion.</p>
+<p>Select <b>Threshold</b> then slide the threshold slider to get a good division between particles and background. Chaff particles can often be excluded by having a lower value of the threshold.</p>
+<p>It's impossible to distinguish between particles that are just touching and those that are an agglomerate, but you can use the <b>Separate touching</b> option to make a judgement call, using the <b>Neck</b> ratio to refine your choice.</p>
+<p>Sometimes you want to exclude very small and very large particles from the analysis. Do this via <b>D-Min & D-Max</b></p>
+<p>For plotting you have a variety of choices. <b>Number of bins</b> is a compromise between a small value, with plenty of entries in each size "bin", but low visual resolution and a high value which gives a smoother distribution, but with fewer particles in each bin. When you have combined datasets (see below) you can go to more bins. This does not affect the calculated values. Then you can choose between <b>Log</b> or <b>Frequency</b> (as an alternative to the more usual "Probability Density)" plots and choose which of <b>Number, Area or Volume</b> distributions you want to see</p>
+<p>The <b>KDE</b> option produces a Kernel Density Estimation plot of the histogram. It is a smart smoothing of the histogram to give a more conventional curve. KDEs are a trade-off between over- and under- smoothing. The app uses a Tuned Silverman/Scott "bandwidth" parameter, calculated from the histogram statistics.</p>
+<p>Once you are happy with the analysis, click the <b>Export CSV</b> to have a record of all relevant values.</p>
+<h3>Combining data</h3>
+<p>A PSD needs many particles to be accurate, but each image has a limited number. So if you have a few different images from a wider area, you can, first, <b>Clear Cumulative</b> if you have a previous multi-image analysis, then for each new image, suitably thresholded, click <b>Add to Cumulative</b> to add the raw data to the collection. When you have enough image data, click <b>Show Cumulative</b> to see the PSD values based on this larger set. When you <b>Export CSV</b> you get the analysis of the full dataset, plus the summaries of the individual sets. If you are interested in, say, Volume D50 (the most used parameter) you can see how it varies for the individual images and how it gradually evolves to the final value. If there are large differences between samples, you may want to revise your technique. If the values are similar then you don't need to take so many images. And if you added one rogue image, you can delete it from the collection and get a revised analysis.</p>
+
+<script src="apps/js/psd.v2.js"></script>
